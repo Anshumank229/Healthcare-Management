@@ -1,0 +1,12 @@
+# Ignore the virtual environment
+Healthcare/
+.venv/
+venv/
+ENV/
+
+# Ignore environment variables
+.env
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
