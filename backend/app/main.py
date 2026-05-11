@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.core.database import engine, Base
-
+from app.whatsapp import router as whatsapp_router
 
 from app.models import User, Patient, Notification
 
@@ -30,3 +30,4 @@ app.include_router(auth.router)
 app.include_router(patients.router)
 app.include_router(appointments.router)
 app.include_router(notifications.router)
+app.include_router(whatsapp_router)
