@@ -1,0 +1,1 @@
+from app.prescriptions.prescriptions import router

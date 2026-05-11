@@ -1,0 +1,1 @@
+from app.medicine_reminders.medicine_reminders import router
