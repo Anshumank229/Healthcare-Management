@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from app.core.database import SessionLocal
 from app.models.medicine_reminder import MedicineReminder
-from app.services.whatsapp_service import send_whatsapp_message
+from app.services.whatsapp_service import whatsapp_service  # ✅ CHANGE THIS
 import logging
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,8 @@ def send_medicine_reminders():
                 f"Stay healthy! 🌿"
             )
             try:
-                send_whatsapp_message(reminder.phone, message)
+                # ✅ USE CLASS METHOD INSTEAD
+                result = whatsapp_service.send_text_message(reminder.phone, message)
                 reminder.last_sent_at = datetime.now(timezone.utc)
                 db.commit()
                 logger.info(f"Reminder sent to {reminder.phone} for {reminder.medicine_name}")
@@ -75,7 +76,8 @@ def send_followup_reminders():
                     f"Stay healthy! 🏥"
                 )
                 try:
-                    send_whatsapp_message(patient.phone, message)
+                    # ✅ USE CLASS METHOD INSTEAD
+                    whatsapp_service.send_text_message(patient.phone, message)
                     logger.info(f"Follow-up reminder sent to {patient.phone}")
                 except Exception as e:
                     logger.error(f"Failed to send follow-up for patient {patient.id}: {e}")
@@ -104,11 +106,11 @@ def start_scheduler():
             replace_existing=True
         )
         scheduler.start()
-        logger.info("Scheduler started.")
+        logger.info("✅ Scheduler started.")
 
 
 def stop_scheduler():
     """Stop scheduler on app shutdown."""
     if scheduler.running:
         scheduler.shutdown()
-        logger.info("Scheduler stopped.")
+        logger.info("🛑 Scheduler stopped.")

@@ -12,6 +12,7 @@ from app.schemas.appointments import (
     AppointmentResponse, AppointmentWithDetails
 )
 from app.auth.auth import get_current_user
+from app.services.whatsapp_service import whatsapp_service
 
 router = APIRouter(prefix="/appointments", tags=["Appointments"])
 
@@ -22,13 +23,14 @@ def get_db():
     finally:
         db.close()
 
+
 @router.post("/", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
 def create_appointment(
         appointment_data: AppointmentCreate,
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
 ):
-    """Create a new appointment"""
+    """Create a new appointment - automatically sends WhatsApp reminder"""
 
     # Check if patient exists
     patient = db.query(Patient).filter(Patient.id == appointment_data.patient_id).first()
@@ -49,7 +51,6 @@ def create_appointment(
         )
 
     # Check for conflicting appointments
-    # Step 1: Fetch candidates from DB (only use column comparisons, no timedelta on columns)
     end_time = appointment_data.appointment_date + timedelta(minutes=appointment_data.duration_minutes)
 
     candidates = db.query(Appointment).filter(
@@ -60,7 +61,6 @@ def create_appointment(
         )
     ).all()
 
-    # Step 2: Check overlap in Python where duration_minutes is a real integer
     conflicting = next(
         (apt for apt in candidates
          if apt.appointment_date + timedelta(minutes=apt.duration_minutes) > appointment_data.appointment_date),
@@ -84,7 +84,24 @@ def create_appointment(
     db.commit()
     db.refresh(appointment)
 
+    # ✅ SEND WHATSAPP REMINDER ✅
+    try:
+        formatted_date = appointment.appointment_date.strftime("%B %d, %Y")
+        formatted_time = appointment.appointment_date.strftime("%I:%M %p")
+
+        whatsapp_service.send_appointment_reminder(
+            to_number=patient.phone,
+            patient_name=f"{patient.first_name} {patient.last_name}",
+            doctor_name=doctor.full_name.replace("Dr.", "").strip(),
+            appointment_date=formatted_date,
+            appointment_time=formatted_time
+        )
+        print(f"✅ WhatsApp reminder sent to {patient.phone}")
+    except Exception as e:
+        print(f"⚠️ WhatsApp error (appointment still created): {e}")
+
     return appointment
+
 
 @router.get("/", response_model=List[AppointmentResponse])
 def get_appointments(
@@ -116,18 +133,17 @@ def get_appointments(
 
     # Role-based restrictions
     if current_user.role == "patient":
-        # Patients can only see their own appointments
         patient = db.query(Patient).filter(Patient.user_id == current_user.id).first()
         if patient:
             query = query.filter(Appointment.patient_id == patient.id)
         else:
             return []
     elif current_user.role == "doctor":
-        # Doctors can only see their own appointments
         query = query.filter(Appointment.doctor_id == current_user.id)
 
     appointments = query.order_by(Appointment.appointment_date).offset(skip).limit(limit).all()
     return appointments
+
 
 @router.get("/doctor/{doctor_id}/availability")
 def get_doctor_availability(
@@ -138,12 +154,10 @@ def get_doctor_availability(
 ):
     """Check doctor's available time slots for a given date"""
 
-    # Working hours (9 AM to 5 PM)
     start_hour = 9
     end_hour = 17
-    slot_duration = 30  # minutes
+    slot_duration = 30
 
-    # Get existing appointments for the doctor on this date
     start_of_day = datetime(date.year, date.month, date.day, start_hour, 0, 0)
     end_of_day = datetime(date.year, date.month, date.day, end_hour, 0, 0)
 
@@ -156,7 +170,6 @@ def get_doctor_availability(
         )
     ).all()
 
-    # Generate available slots
     available_slots = []
     current_time = start_of_day
 
@@ -179,6 +192,7 @@ def get_doctor_availability(
         "available_slots": available_slots
     }
 
+
 @router.get("/{appointment_id}", response_model=AppointmentWithDetails)
 def get_appointment(
         appointment_id: int,
@@ -194,7 +208,6 @@ def get_appointment(
             detail="Appointment not found"
         )
 
-    # Check permissions
     patient = db.query(Patient).filter(Patient.id == appointment.patient_id).first()
     if current_user.role == "patient" and patient.user_id != current_user.id:
         raise HTTPException(
@@ -207,7 +220,6 @@ def get_appointment(
             detail="Access denied"
         )
 
-    # Get additional details
     doctor = db.query(User).filter(User.id == appointment.doctor_id).first()
     patient = db.query(Patient).filter(Patient.id == appointment.patient_id).first()
 
@@ -216,6 +228,7 @@ def get_appointment(
         "patient_name": f"{patient.first_name} {patient.last_name}",
         "doctor_name": doctor.full_name
     }
+
 
 @router.put("/{appointment_id}", response_model=AppointmentResponse)
 def update_appointment(
@@ -233,7 +246,6 @@ def update_appointment(
             detail="Appointment not found"
         )
 
-    # Check permissions
     patient = db.query(Patient).filter(Patient.id == appointment.patient_id).first()
     if current_user.role == "patient" and patient.user_id != current_user.id:
         raise HTTPException(
@@ -241,7 +253,6 @@ def update_appointment(
             detail="Access denied"
         )
 
-    # Update fields
     for field, value in appointment_data.dict(exclude_unset=True).items():
         setattr(appointment, field, value)
 
@@ -249,6 +260,7 @@ def update_appointment(
     db.refresh(appointment)
 
     return appointment
+
 
 @router.delete("/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def cancel_appointment(
@@ -265,7 +277,6 @@ def cancel_appointment(
             detail="Appointment not found"
         )
 
-    # Check permissions
     patient = db.query(Patient).filter(Patient.id == appointment.patient_id).first()
     if current_user.role not in ["admin", "staff"]:
         if current_user.role == "patient" and patient.user_id != current_user.id:
