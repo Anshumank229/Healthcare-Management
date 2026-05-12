@@ -86,10 +86,10 @@ def _gemini_reply(system_prompt: str, user_message: str) -> tuple[str, str]:
     from google import genai
     client = genai.Client(api_key=GEMINI_API_KEY)
     response = client.models.generate_content(
-        model="models/gemini-1.5-flash",
+        model="gemini-1.5-flash-latest",
         contents=f"{system_prompt}\n\nPatient asks: {user_message}"
     )
-    return response.text.strip(), "models/gemini-1.5-flash"
+    return response.text.strip(), "gemini-1.5-flash-latest"
 
 
 def _openai_reply(system_prompt: str, user_message: str) -> tuple[str, str]:
