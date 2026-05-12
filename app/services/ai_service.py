@@ -1,14 +1,20 @@
 import os
 import logging
-from openai import OpenAI
+import anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
+
 logger = logging.getLogger(__name__)
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+MODEL = "claude-sonnet-4-5-20250929"
+
+if not ANTHROPIC_API_KEY:
+    logger.critical(
+        "ANTHROPIC_API_KEY is not set. "
+        "Add it to your .env file and Render environment variables."
+    )
 
 # Clinic context — customize this for your clinic
 CLINIC_SYSTEM_PROMPT = """
@@ -32,74 +38,53 @@ Your job:
 - Respond in the same language the patient uses (Hindi or English)
 """
 
+# Build client once — avoids recreating on every request
+_client: anthropic.Anthropic | None = (
+    anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+)
+
+FALLBACK_MESSAGE = (
+    "I'm sorry, I'm unable to process your request right now. "
+    "Please contact the clinic directly for assistance."
+)
+
 
 def get_ai_reply(user_message: str, patient_context: str = "") -> tuple[str, str]:
+    """
+    Returns (reply_text, model_used).
+    Falls back to a static message if the API call fails.
+    """
+    if not _client:
+        logger.error("Claude client not initialised — ANTHROPIC_API_KEY missing.")
+        return FALLBACK_MESSAGE, "fallback"
+
     full_system_prompt = CLINIC_SYSTEM_PROMPT
     if patient_context:
         full_system_prompt += f"\n\nPatient Context:\n{patient_context}"
 
-    # Primary: DeepSeek
-    if DEEPSEEK_API_KEY:
-        try:
-            return _deepseek_reply(full_system_prompt, user_message)
-        except Exception as e:
-            logger.warning(f"DeepSeek failed: {e}. Trying next...")
+    try:
+        return _claude_reply(full_system_prompt, user_message)
+    except anthropic.AuthenticationError:
+        logger.error("Claude API: invalid or expired API key.")
+    except anthropic.RateLimitError:
+        logger.warning("Claude API: rate limit hit.")
+    except anthropic.APIConnectionError as e:
+        logger.error(f"Claude API: connection error — {e}")
+    except anthropic.APIStatusError as e:
+        logger.error(f"Claude API: status {e.status_code} — {e.message}")
+    except Exception as e:
+        logger.error(f"Claude API: unexpected error — {e}")
 
-    # Fallback 1: Gemini
-    if GEMINI_API_KEY:
-        try:
-            return _gemini_reply(full_system_prompt, user_message)
-        except Exception as e:
-            logger.warning(f"Gemini failed: {e}. Trying next...")
-
-    # Fallback 2: OpenAI
-    if OPENAI_API_KEY:
-        try:
-            return _openai_reply(full_system_prompt, user_message)
-        except Exception as e:
-            logger.warning(f"OpenAI failed: {e}")
-
-    return (
-        "I'm sorry, I'm unable to process your request right now. "
-        "Please contact the clinic directly for assistance.",
-        "fallback"
-    )
+    return FALLBACK_MESSAGE, "fallback"
 
 
-def _deepseek_reply(system_prompt: str, user_message: str) -> tuple[str, str]:
-    client = OpenAI(
-        api_key=DEEPSEEK_API_KEY,
-        base_url="https://api.deepseek.com"
-    )
-    response = client.chat.completions.create(
-        model="deepseek-chat",
+def _claude_reply(system_prompt: str, user_message: str) -> tuple[str, str]:
+    response = _client.messages.create(
+        model=MODEL,
+        max_tokens=500,
+        system=system_prompt,
         messages=[
-            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message}
         ],
-        max_tokens=500
     )
-    return response.choices[0].message.content.strip(), "deepseek-chat"
-
-
-def _gemini_reply(system_prompt: str, user_message: str) -> tuple[str, str]:
-    from google import genai
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-exp",
-        contents=f"{system_prompt}\n\nPatient asks: {user_message}"
-    )
-    return response.text.strip(), "gemini-2.0-flash-exp"
-
-
-def _openai_reply(system_prompt: str, user_message: str) -> tuple[str, str]:
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
-        ],
-        max_tokens=500
-    )
-    return response.choices[0].message.content.strip(), "gpt-3.5-turbo"
+    return response.content[0].text.strip(), MODEL

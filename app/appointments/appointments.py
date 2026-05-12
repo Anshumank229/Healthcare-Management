@@ -1,3 +1,4 @@
+import requests
 from fastapi import APIRouter, HTTPException, Depends, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
@@ -99,6 +100,34 @@ def create_appointment(
         print(f"✅ WhatsApp reminder sent to {patient.phone}")
     except Exception as e:
         print(f"⚠️ WhatsApp error (appointment still created): {e}")
+
+    # ✅ TRIGGER n8n WORKFLOW for scheduled reminder (24 hours before)
+    try:
+        n8n_webhook = "http://localhost:5678/webhook/appointment-reminder"
+
+        payload = {
+            "patient_name": f"{patient.first_name} {patient.last_name}",
+            "phone": patient.phone,
+            "doctor_name": doctor.full_name.replace("Dr.", "").strip(),
+            "appointment_date": formatted_date,
+            "appointment_time": formatted_time,
+            "appointment_id": appointment.id,
+            "reason": appointment.reason
+        }
+
+        # Send to n8n asynchronously (don't wait for response)
+        import threading
+        def trigger_n8n():
+            try:
+                requests.post(n8n_webhook, json=payload, timeout=5)
+                print(f"✅ n8n workflow triggered for appointment {appointment.id}")
+            except Exception as e:
+                print(f"⚠️ n8n trigger failed: {e}")
+
+        threading.Thread(target=trigger_n8n).start()
+
+    except Exception as e:
+        print(f"⚠️ n8n trigger setup error: {e}")
 
     return appointment
 
