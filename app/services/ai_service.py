@@ -6,9 +6,9 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-DEEPSEEK_API_KEY = os.getenv("sk-7de816cb015d4008b4877f7a65c9ec58")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")       # optional fallback
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")       # optional fallback
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Clinic context — customize this for your clinic
 CLINIC_SYSTEM_PROMPT = """
@@ -34,10 +34,6 @@ Your job:
 
 
 def get_ai_reply(user_message: str, patient_context: str = "") -> tuple[str, str]:
-    """
-    Returns (reply_text, model_used)
-    Tries DeepSeek first, then Gemini, then OpenAI, then fallback message.
-    """
     full_system_prompt = CLINIC_SYSTEM_PROMPT
     if patient_context:
         full_system_prompt += f"\n\nPatient Context:\n{patient_context}"
@@ -63,7 +59,6 @@ def get_ai_reply(user_message: str, patient_context: str = "") -> tuple[str, str
         except Exception as e:
             logger.warning(f"OpenAI failed: {e}")
 
-    # Final fallback
     return (
         "I'm sorry, I'm unable to process your request right now. "
         "Please contact the clinic directly for assistance.",
@@ -72,7 +67,6 @@ def get_ai_reply(user_message: str, patient_context: str = "") -> tuple[str, str
 
 
 def _deepseek_reply(system_prompt: str, user_message: str) -> tuple[str, str]:
-    """DeepSeek uses OpenAI-compatible API — just different base_url and model."""
     client = OpenAI(
         api_key=DEEPSEEK_API_KEY,
         base_url="https://api.deepseek.com"
@@ -89,13 +83,13 @@ def _deepseek_reply(system_prompt: str, user_message: str) -> tuple[str, str]:
 
 
 def _gemini_reply(system_prompt: str, user_message: str) -> tuple[str, str]:
-    import google.generativeai as genai
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    response = model.generate_content(
-        f"{system_prompt}\n\nPatient asks: {user_message}"
+    from google import genai
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=f"{system_prompt}\n\nPatient asks: {user_message}"
     )
-    return response.text.strip(), "gemini-1.5-flash"
+    return response.text.strip(), "gemini-2.0-flash"
 
 
 def _openai_reply(system_prompt: str, user_message: str) -> tuple[str, str]:
