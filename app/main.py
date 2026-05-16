@@ -43,16 +43,17 @@ def root():
 def health_check():
     return {"status": "ok", "database": "connected"}
 
-# ✅ UPDATED CORS - Add your Vercel URLs
+
+# ✅ FIXED CORS - Use this exact configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:3000",
-        "https://healthcare-dashboard.vercel.app",
         "https://healthcare-dashboard-gamma-nine.vercel.app",
-        "https://*.vercel.app"  # Allow all Vercel preview deployments
+        "https://healthcare-dashboard.vercel.app",
+        "https://healthcare-dashboard-nuy9gcowv-kumaranshuman500-5973s-projects.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
