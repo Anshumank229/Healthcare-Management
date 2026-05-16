@@ -20,11 +20,9 @@ from slowapi.middleware import SlowAPIMiddleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     Base.metadata.create_all(bind=engine)
     start_scheduler()
     yield
-    # Shutdown
     stop_scheduler()
 
 
@@ -36,6 +34,25 @@ app = FastAPI(
 )
 
 
+# ✅ CORS must be FIRST — before rate limiting middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "https://healthcare-dashboard-gamma-nine.vercel.app",  # your exact Vercel URL
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+# ✅ Rate limiting comes AFTER CORS
+setup_rate_limiting(app)
+app.add_middleware(SlowAPIMiddleware)
+
+
 @app.get("/")
 def root():
     return {"message": "Healthcare API is running", "status": "healthy"}
@@ -44,27 +61,6 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "ok", "database": "connected"}
-
-
-# Setup rate limiting
-setup_rate_limiting(app)
-app.add_middleware(SlowAPIMiddleware)
-
-
-# CORS configuration - Allow all Vercel preview URLs
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "https://healthcare-dashboard-gamma-nine.vercel.app",
-        "https://healthcare-dashboard.vercel.app",
-        "https://*.vercel.app",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 app.include_router(auth.router)
