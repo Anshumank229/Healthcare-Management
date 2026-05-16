@@ -35,13 +35,15 @@ app = FastAPI(
 )
 
 
-# ✅ CORS must be first — before any other middleware
+# CORS must be first — before any other middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://healthcare-dashboard-gamma-nine.vercel.app",
-        "http://localhost:3000",  # for local dev
+        "https://healthcare-dashboard-gamma-nine.vercel.app",  # production
+        "http://localhost:3000",
+        "http://localhost:5173",
     ],
+    allow_origin_regex=r"https://.*\.vercel\.app",  # all Vercel preview URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
