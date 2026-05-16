@@ -14,7 +14,7 @@ from app.medicine_reminders import medicine_reminders
 from fastapi.middleware.cors import CORSMiddleware
 from app.analytics import analytics
 from app.services.scheduler import start_scheduler, stop_scheduler
-from app.core.rate_limit import setup_rate_limiting, limiter
+from app.core.rate_limit import setup_rate_limiting
 from slowapi.middleware import SlowAPIMiddleware
 
 
@@ -29,21 +29,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title=\"Healthcare Platform API\",
-    description=\"AI Patient Follow-up Automation Platform\",
-    version=\"2.0.0\",
+    title="Healthcare Platform API",
+    description="AI Patient Follow-up Automation Platform",
+    version="2.0.0",
     lifespan=lifespan
 )
 
 
-@app.get(\"/\")
+@app.get("/")
 def root():
-    return {\"message\": \"Healthcare API is running\", \"status\": \"healthy\"}
+    return {"message": "Healthcare API is running", "status": "healthy"}
 
 
-@app.get(\"/health\")
+@app.get("/health")
 def health_check():
-    return {\"status\": \"ok\", \"database\": \"connected\"}
+    return {"status": "ok", "database": "connected"}
 
 
 # Setup rate limiting
@@ -55,13 +55,13 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        \"http://localhost:5173\",
-        \"http://localhost:5174\",
-        \"https://healthcare-dashboard-gamma-nine.vercel.app\",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "https://healthcare-dashboard-gamma-nine.vercel.app",
     ],
     allow_credentials=True,
-    allow_methods=[\"*\"],
-    allow_headers=[\"*\"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
