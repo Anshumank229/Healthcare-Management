@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from app.ml import predictions
 from contextlib import asynccontextmanager
 from app.core.database import engine, Base
 from app.whatsapp import router as whatsapp_router
@@ -10,7 +11,7 @@ from app.notifications import notifications
 from app.leads import leads
 from app.prescriptions import prescriptions
 from app.medicine_reminders import medicine_reminders
-from app.ai import chatbot
+from fastapi.middleware.cors import CORSMiddleware
 from app.analytics import analytics
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -42,6 +43,22 @@ def root():
 def health_check():
     return {"status": "ok", "database": "connected"}
 
+# ✅ UPDATED CORS - Add your Vercel URLs
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:3000",
+        "https://healthcare-dashboard.vercel.app",
+        "https://healthcare-dashboard-gamma-nine.vercel.app",
+        "https://*.vercel.app"  # Allow all Vercel preview deployments
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 app.include_router(auth.router)
 app.include_router(patients.router)
@@ -51,5 +68,5 @@ app.include_router(whatsapp_router)
 app.include_router(leads.router)
 app.include_router(prescriptions.router)
 app.include_router(medicine_reminders.router)
-app.include_router(chatbot.router)
+app.include_router(predictions.router)
 app.include_router(analytics.router)
