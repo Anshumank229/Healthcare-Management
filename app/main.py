@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-# from app.ml import predictions  # Temporarily disabled
+from app.ml import predictions  # Temporarily disabled
 from contextlib import asynccontextmanager
 from app.core.database import engine, Base
 from app.whatsapp import router as whatsapp_router
@@ -69,5 +69,5 @@ app.include_router(whatsapp_router)
 app.include_router(leads.router)
 app.include_router(prescriptions.router)
 app.include_router(medicine_reminders.router)
-# app.include_router(predictions.router)  # Temporarily disabled
+app.include_router(predictions.router)
 app.include_router(analytics.router)
