@@ -1,7 +1,10 @@
 ﻿from fastapi import FastAPI
-from app.ml import predictions
 from contextlib import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi.middleware import SlowAPIMiddleware
+
 from app.core.database import engine, Base
+from app.core.rate_limit import setup_rate_limiting
 from app.whatsapp import router as whatsapp_router
 from app.models import User, Patient, Notification, Lead, Prescription, MedicineReminder
 from app.auth import auth
@@ -11,11 +14,9 @@ from app.notifications import notifications
 from app.leads import leads
 from app.prescriptions import prescriptions
 from app.medicine_reminders import medicine_reminders
-from fastapi.middleware.cors import CORSMiddleware
 from app.analytics import analytics
 from app.services.scheduler import start_scheduler, stop_scheduler
-from app.core.rate_limit import setup_rate_limiting
-from slowapi.middleware import SlowAPIMiddleware
+from app.ml import predictions
 
 
 @asynccontextmanager
@@ -34,21 +35,19 @@ app = FastAPI(
 )
 
 
-# ✅ CORS must be FIRST — before rate limiting middleware
+# ✅ CORS must be first — before any other middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "https://healthcare-dashboard-gamma-nine.vercel.app",  # your exact Vercel URL
+        "https://healthcare-dashboard-gamma-nine.vercel.app",
+        "http://localhost:3000",  # for local dev
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Rate limiting comes AFTER CORS
+# Rate limiting after CORS
 setup_rate_limiting(app)
 app.add_middleware(SlowAPIMiddleware)
 
@@ -56,7 +55,6 @@ app.add_middleware(SlowAPIMiddleware)
 @app.get("/")
 def root():
     return {"message": "Healthcare API is running", "status": "healthy"}
-
 
 @app.get("/health")
 def health_check():
