@@ -29,21 +29,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title=\"Healthcare Platform API\",
-    description=\"AI Patient Follow-up Automation Platform\",
-    version=\"2.0.0\",
+    title="Healthcare Platform API",
+    description="AI Patient Follow-up Automation Platform",
+    version="2.0.0",
     lifespan=lifespan
 )
 
 
-@app.get(\"/\")
+@app.get("/")
 def root():
-    return {\"message\": \"Healthcare API is running\", \"status\": \"healthy\"}
+    return {"message": "Healthcare API is running", "status": "healthy"}
 
 
-@app.get(\"/health\")
+@app.get("/health")
 def health_check():
-    return {\"status\": \"ok\", \"database\": \"connected\"}
+    return {"status": "ok", "database": "connected"}
 
 
 # Setup rate limiting
@@ -55,15 +55,15 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        \"http://localhost:5173\",
-        \"http://localhost:5174\",
-        \"https://healthcare-dashboard-gamma-nine.vercel.app\",
-        \"https://healthcare-dashboard.vercel.app\",
-        \"https://*.vercel.app\",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "https://healthcare-dashboard-gamma-nine.vercel.app",
+        "https://healthcare-dashboard.vercel.app",
+        "https://*.vercel.app",
     ],
     allow_credentials=True,
-    allow_methods=[\"*\"],
-    allow_headers=[\"*\"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
