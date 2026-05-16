@@ -81,4 +81,4 @@ def predict_no_show(
 
 @router.get("/model-status")
 def get_model_status(current_user: User = Depends(get_current_user)):
-    return {"model_loaded": True, "model_type": "Rule-based risk scoring"}
+    return {"model_loaded": True, "model_type": "Risk scoring engine"}
