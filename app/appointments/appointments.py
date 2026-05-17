@@ -1,4 +1,5 @@
 import requests
+from app.services.whatsapp_service import whatsapp_service
 from fastapi import APIRouter, HTTPException, Depends, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
