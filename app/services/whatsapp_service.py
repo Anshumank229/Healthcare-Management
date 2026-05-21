@@ -20,6 +20,30 @@ class WhatsAppService:
         response = requests.post(url, headers=headers, json=data)
         return response.json()
 
+    def send_text_message_with_retry(self, to_number: str, message: str) -> dict:
+        """Send message with Redis-backed retry queue on failure"""
+        try:
+            result = self.send_text_message(to_number, message)
+            if "error" in result:
+                # Add to Redis retry queue
+                from app.core.redis_client import redis_client
+                redis_client.add_to_retry_queue({
+                    "to_number": to_number,
+                    "message": message,
+                    "original_error": result.get("error")
+                })
+                logger.warning(f"Message queued for retry to {to_number}")
+            return result
+        except Exception as e:
+            from app.core.redis_client import redis_client
+            redis_client.add_to_retry_queue({
+                "to_number": to_number,
+                "message": message,
+                "error": str(e)
+            })
+            logger.error(f"Message queued for retry due to: {e}")
+            return {"error": str(e), "queued": True}
+
     def send_appointment_reminder(self, to_number: str, patient_name: str, doctor_name: str, appointment_date: str, appointment_time: str) -> dict:
         message = f'''🏥 *Appointment Reminder*
 
@@ -36,7 +60,7 @@ Please reply:
 • CANCEL - to cancel the appointment
 
 Thank you for choosing Healthcare Platform!'''
-        return self.send_text_message(to_number, message)
+        return self.send_text_message_with_retry(to_number, message)
 
     def send_doctor_notification(self, to_number: str, doctor_name: str, patient_name: str, appointment_date: str, appointment_time: str) -> dict:
         message = f'''👨‍⚕️ *New Appointment Booked*
@@ -52,7 +76,7 @@ Please ensure you are available at the scheduled time.
 
 Thank you,
 Healthcare Platform'''
-        return self.send_text_message(to_number, message)
+        return self.send_text_message_with_retry(to_number, message)
 
     def send_daily_checkin(self, to_number: str, patient_name: str) -> dict:
         message = f'''🌞 *Daily Health Check-in*
@@ -67,7 +91,7 @@ Reply with:
 • 👎 - Need assistance
 
 Healthcare Platform cares about your health!'''
-        return self.send_text_message(to_number, message)
+        return self.send_text_message_with_retry(to_number, message)
 
     def send_followup_reminder(self, to_number: str, patient_name: str, appointment_date: str, days_remaining: int) -> dict:
         message = f'''👋 *Follow-up Reminder*
@@ -82,7 +106,7 @@ Please reply CONFIRM to confirm or call the clinic to reschedule.
 
 Thank you,
 Healthcare Platform'''
-        return self.send_text_message(to_number, message)
+        return self.send_text_message_with_retry(to_number, message)
 
     def send_missed_appointment_notice(self, to_number: str, patient_name: str, appointment_date: str) -> dict:
         message = f'''⚠️ *Missed Appointment Notice*
@@ -95,6 +119,6 @@ Please call the clinic to reschedule as soon as possible.
 
 Thank you,
 Healthcare Platform'''
-        return self.send_text_message(to_number, message)
+        return self.send_text_message_with_retry(to_number, message)
 
 whatsapp_service = WhatsAppService()

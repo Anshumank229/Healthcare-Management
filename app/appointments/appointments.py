@@ -14,9 +14,10 @@ from app.schemas.appointments import (
     AppointmentResponse, AppointmentWithDetails
 )
 from app.auth.auth import get_current_user
-from app.services.whatsapp_service import whatsapp_service
+from app.core.redis_client import redis_client
 
 router = APIRouter(prefix="/appointments", tags=["Appointments"])
+
 
 def get_db():
     db = SessionLocal()
@@ -86,7 +87,10 @@ def create_appointment(
     db.commit()
     db.refresh(appointment)
 
-    # ✅ SEND WHATSAPP REMINDER ✅
+    # Invalidate doctor availability cache
+    redis_client.invalidate_doctor_availability(appointment.doctor_id)
+
+    # Send WhatsApp reminder to patient
     try:
         formatted_date = appointment.appointment_date.strftime("%B %d, %Y")
         formatted_time = appointment.appointment_date.strftime("%I:%M %p")
@@ -99,10 +103,21 @@ def create_appointment(
             appointment_time=formatted_time
         )
         print(f"✅ WhatsApp reminder sent to {patient.phone}")
+
+        # Send notification to doctor if they have phone number
+        if doctor.phone:
+            whatsapp_service.send_doctor_notification(
+                to_number=doctor.phone,
+                doctor_name=doctor.full_name.replace("Dr.", "").strip(),
+                patient_name=f"{patient.first_name} {patient.last_name}",
+                appointment_date=formatted_date,
+                appointment_time=formatted_time
+            )
+            print(f"✅ WhatsApp notification sent to doctor {doctor.phone}")
     except Exception as e:
         print(f"⚠️ WhatsApp error (appointment still created): {e}")
 
-    # ✅ TRIGGER n8n WORKFLOW for scheduled reminder (24 hours before)
+    # Trigger n8n workflow for scheduled reminder (24 hours before)
     try:
         n8n_webhook = "http://localhost:5678/webhook/appointment-reminder"
 
@@ -116,7 +131,6 @@ def create_appointment(
             "reason": appointment.reason
         }
 
-        # Send to n8n asynchronously (don't wait for response)
         import threading
         def trigger_n8n():
             try:
@@ -133,57 +147,28 @@ def create_appointment(
     return appointment
 
 
-@router.get("/", response_model=List[AppointmentResponse])
-def get_appointments(
-        patient_id: Optional[int] = Query(None, description="Filter by patient ID"),
-        doctor_id: Optional[int] = Query(None, description="Filter by doctor ID"),
-        status: Optional[AppointmentStatus] = Query(None, description="Filter by status"),
-        from_date: Optional[datetime] = Query(None, description="From date"),
-        to_date: Optional[datetime] = Query(None, description="To date"),
-        skip: int = 0,
-        limit: int = 100,
-        current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db)
-):
-    """Get appointments with filters"""
-
-    query = db.query(Appointment)
-
-    # Apply filters
-    if patient_id:
-        query = query.filter(Appointment.patient_id == patient_id)
-    if doctor_id:
-        query = query.filter(Appointment.doctor_id == doctor_id)
-    if status:
-        query = query.filter(Appointment.status == status)
-    if from_date:
-        query = query.filter(Appointment.appointment_date >= from_date)
-    if to_date:
-        query = query.filter(Appointment.appointment_date <= to_date)
-
-    # Role-based restrictions
-    if current_user.role == "patient":
-        patient = db.query(Patient).filter(Patient.user_id == current_user.id).first()
-        if patient:
-            query = query.filter(Appointment.patient_id == patient.id)
-        else:
-            return []
-    elif current_user.role == "doctor":
-        query = query.filter(Appointment.doctor_id == current_user.id)
-
-    appointments = query.order_by(Appointment.appointment_date).offset(skip).limit(limit).all()
-    return appointments
-
-
 @router.get("/doctor/{doctor_id}/availability")
 def get_doctor_availability(
         doctor_id: int,
-        date: datetime = Query(..., description="Date to check availability (YYYY-MM-DD)"),
+        date: datetime = Query(..., description="Date to check availability"),
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
 ):
-    """Check doctor's available time slots for a given date"""
+    """Check doctor's available time slots for a given date (with Redis caching)"""
 
+    date_str = date.strftime("%Y-%m-%d")
+
+    # Try to get from Redis cache
+    cached_slots = redis_client.get_doctor_availability(doctor_id, date_str)
+    if cached_slots is not None:
+        return {
+            "doctor_id": doctor_id,
+            "date": date_str,
+            "available_slots": cached_slots,
+            "cached": True
+        }
+
+    # Calculate availability
     start_hour = 9
     end_hour = 17
     slot_duration = 30
@@ -216,11 +201,55 @@ def get_doctor_availability(
 
         current_time += timedelta(minutes=slot_duration)
 
+    # Cache the result
+    redis_client.set_doctor_availability(doctor_id, date_str, available_slots)
+
     return {
         "doctor_id": doctor_id,
-        "date": date.strftime("%Y-%m-%d"),
-        "available_slots": available_slots
+        "date": date_str,
+        "available_slots": available_slots,
+        "cached": False
     }
+
+
+@router.get("/", response_model=List[AppointmentResponse])
+def get_appointments(
+        patient_id: Optional[int] = Query(None, description="Filter by patient ID"),
+        doctor_id: Optional[int] = Query(None, description="Filter by doctor ID"),
+        status: Optional[AppointmentStatus] = Query(None, description="Filter by status"),
+        from_date: Optional[datetime] = Query(None, description="From date"),
+        to_date: Optional[datetime] = Query(None, description="To date"),
+        skip: int = 0,
+        limit: int = 100,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """Get appointments with filters"""
+
+    query = db.query(Appointment)
+
+    if patient_id:
+        query = query.filter(Appointment.patient_id == patient_id)
+    if doctor_id:
+        query = query.filter(Appointment.doctor_id == doctor_id)
+    if status:
+        query = query.filter(Appointment.status == status)
+    if from_date:
+        query = query.filter(Appointment.appointment_date >= from_date)
+    if to_date:
+        query = query.filter(Appointment.appointment_date <= to_date)
+
+    if current_user.role == "patient":
+        patient = db.query(Patient).filter(Patient.user_id == current_user.id).first()
+        if patient:
+            query = query.filter(Appointment.patient_id == patient.id)
+        else:
+            return []
+    elif current_user.role == "doctor":
+        query = query.filter(Appointment.doctor_id == current_user.id)
+
+    appointments = query.order_by(Appointment.appointment_date).offset(skip).limit(limit).all()
+    return appointments
 
 
 @router.get("/{appointment_id}", response_model=AppointmentWithDetails)
@@ -289,6 +318,9 @@ def update_appointment(
     db.commit()
     db.refresh(appointment)
 
+    # Invalidate doctor availability cache
+    redis_client.invalidate_doctor_availability(appointment.doctor_id)
+
     return appointment
 
 
@@ -322,5 +354,8 @@ def cancel_appointment(
 
     appointment.status = AppointmentStatus.CANCELLED
     db.commit()
+
+    # Invalidate doctor availability cache
+    redis_client.invalidate_doctor_availability(appointment.doctor_id)
 
     return None

@@ -17,7 +17,8 @@ from app.medicine_reminders import medicine_reminders
 from app.analytics import analytics
 from app.services.scheduler import start_scheduler, stop_scheduler
 from app.ml import predictions
-from app.doctors import doctors  # Add this import
+from app.doctors import doctors
+from app.services.retry_worker import start_retry_worker
 
 
 @asynccontextmanager
@@ -25,11 +26,12 @@ async def lifespan(app: FastAPI):
     # Startup
     Base.metadata.create_all(bind=engine)
     start_scheduler()
-    start_followup_scheduler()  # ✅ Start followup scheduler here
+    start_followup_scheduler()
+    start_retry_worker()  # ✅ Start Redis retry worker
     yield
     # Shutdown
     stop_scheduler()
-    stop_followup_scheduler()   # ✅ Stop followup scheduler here
+    stop_followup_scheduler()
 
 
 app = FastAPI(
@@ -40,7 +42,7 @@ app = FastAPI(
 )
 
 
-# CORS must be first — before any other middleware
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -81,4 +83,4 @@ app.include_router(prescriptions.router)
 app.include_router(medicine_reminders.router)
 app.include_router(predictions.router)
 app.include_router(analytics.router)
-app.include_router(doctors.router)  # ✅ Add doctors router
+app.include_router(doctors.router)
